@@ -1,18 +1,18 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type MouseEvent } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { getProjects, createProject, updateProject, deleteProject, getMessages, saveMessage, saveProjectEmail, getProjectEmails, getProjectIdeas, saveProjectIdea, getCampaigns, createCampaign, updateCampaign, deleteCampaign, saveEmail, getEmails, updateEmail } from "@/lib/firestore";
 
-const VIOLET = "#9B59FF";
-const BG = "#080808";
-const SURFACE = "#111111";
-const SURFACE2 = "#181818";
-const BORDER = "#222222";
-const TEXT = "#F0F0F0";
-const TEXT_DIM = "#555555";
-const TEXT_MID = "#999999";
+const VIOLET = "#7A1F3D";
+const BG = "#FDFCFB";
+const SURFACE = "#FFFFFF";
+const SURFACE2 = "#FFF8F5";
+const BORDER = "#E8DCD6";
+const TEXT = "#2D2D2D";
+const TEXT_DIM = "#8F7F78";
+const TEXT_MID = "#5F514C";
 
 const agentColors: Record<string, string> = {
   orchestrator: "#9B59FF", research: "#00D4FF", copywriter: "#FF6B35", strategist: "#00E5A0", factchecker: "#FFD700",
@@ -49,7 +49,7 @@ const welcomeMessage: Message = {
 };
 
 function StatusDot({ status }: { status: AgentStatus }) {
-  const colors: Record<AgentStatus, string> = { idle: "#333", thinking: VIOLET, working: "#00D4FF", waiting: "#FFD700" };
+  const colors: Record<AgentStatus, string> = { idle: "#8F7F78", thinking: VIOLET, working: "#2D8C7F", waiting: "#B8860B" };
   const labels: Record<AgentStatus, string> = { idle: "Idle", thinking: "Thinking", working: "Working", waiting: "Waiting" };
   return (
     <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -88,17 +88,30 @@ function AgentCard({ agent, onApprove }: { agent: Agent; onApprove: (id: string)
 
 function MessageBubble({ msg }: { msg: Message }) {
   const isUser = msg.role === "user";
+  const isAssistant = msg.role === "assistant";
   const renderContent = (text: string) =>
     text.split("\n").map((line, i) => {
       const parts = line.split(/(\*\*[^*]+\*\*)/g);
       return <div key={i}>{parts.map((p, j) => p.startsWith("**") && p.endsWith("**") ? <strong key={j} style={{ color: TEXT, fontWeight: 600 }}>{p.slice(2, -2)}</strong> : <span key={j}>{p}</span>)}</div>;
     });
   return (
-    <div style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", marginBottom: 18, animation: "fadeIn 0.3s ease" }}>
-      {!isUser && <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${VIOLET}22`, border: `1px solid ${VIOLET}44`, display: "flex", alignItems: "center", justifyContent: "center", marginRight: 10, flexShrink: 0, fontSize: 12, color: VIOLET }}>⬡</div>}
-      <div style={{ maxWidth: "72%", background: isUser ? `${VIOLET}1a` : SURFACE2, border: `1px solid ${isUser ? VIOLET + "44" : BORDER}`, borderRadius: isUser ? "12px 12px 2px 12px" : "12px 12px 12px 2px", padding: "10px 14px" }}>
+    <div style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", marginBottom: 14, animation: "fadeIn 0.3s ease" }}>
+      <div style={{ width: isUser ? "72%" : "100%", maxWidth: isUser ? "72%" : "100%", background: isUser ? `${VIOLET}14` : "#FFFFFF", border: `1px solid ${isUser ? VIOLET + "55" : BORDER}`, borderRadius: 14, padding: "12px 14px" }}>
+        {isAssistant && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <div style={{ fontSize: 10, color: "#2D8C7F", fontFamily: "monospace", textTransform: "uppercase" }}>ready</div>
+            <div style={{ fontSize: 10, color: TEXT_DIM }}>{msg.ts}</div>
+          </div>
+        )}
         <div style={{ fontSize: 13, color: TEXT_MID, lineHeight: 1.65, whiteSpace: "pre-line" }}>{renderContent(msg.content)}</div>
-        <div style={{ fontSize: 10, color: TEXT_DIM, marginTop: 6, textAlign: "right" }}>{msg.ts}</div>
+        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 10, color: TEXT_DIM }}>{isAssistant ? "AI draft" : "You"}</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {!isUser && <button style={{ fontSize: 10, padding: "2px 8px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 6, color: TEXT_MID, cursor: "pointer" }}>Send</button>}
+            {!isUser && <button style={{ fontSize: 10, padding: "2px 8px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 6, color: TEXT_MID, cursor: "pointer" }}>Edit</button>}
+          </div>
+        </div>
+        {isUser && <div style={{ fontSize: 10, color: TEXT_DIM, marginTop: 6, textAlign: "right" }}>{msg.ts}</div>}
       </div>
     </div>
   );
@@ -121,14 +134,13 @@ export default function DashboardPage() {
   const [latestEmailDraft, setLatestEmailDraft] = useState<EmailDraft | null>(null);
   const [latestResearch, setLatestResearch] = useState<ResearchData | null>(null);
   const [latestStrategy, setLatestStrategy] = useState<StrategistProfile | null>(null);
-  const [projectEmailsCount, setProjectEmailsCount] = useState(0);
   const [ideas, setIdeas] = useState<IdeaItem[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
   const [activeCampaign, setActiveCampaign] = useState<string | null>(null);
   const [campaignEmails, setCampaignEmails] = useState<CampaignEmailItem[]>([]);
   const [projectEmails, setProjectEmails] = useState<CampaignEmailItem[]>([]);
   const [selectedCampaignEmail, setSelectedCampaignEmail] = useState<CampaignEmailItem | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
+  const [, setIsExporting] = useState(false);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectModalMode, setProjectModalMode] = useState<ProjectModalMode>("create");
   const [projectModalTargetId, setProjectModalTargetId] = useState<string | null>(null);
@@ -183,7 +195,6 @@ export default function DashboardPage() {
     getProjectEmails(activeProject).then((emails) => {
       const list = emails as CampaignEmailItem[];
       setProjectEmails(list);
-      setProjectEmailsCount(list.length);
     });
     getProjectIdeas(activeProject).then((projectIdeas) => setIdeas(projectIdeas as IdeaItem[]));
     getCampaigns(activeProject).then((data) => {
@@ -191,24 +202,15 @@ export default function DashboardPage() {
       setCampaigns(list);
       setActiveCampaign(list.length > 0 ? list[0].id : null);
     });
-    setCampaignEmails([]);
-    setSelectedCampaignEmail(null);
-    setLatestResearch(null);
-    setLatestEmailDraft(null);
-    setLatestStrategy(null);
   }, [activeProject]);
 
   useEffect(() => {
     if (!activeCampaign) {
-      setCampaignEmails([]);
-      setSelectedCampaignEmail(null);
-      setProjectEmailsCount(projectEmails.length);
       return;
     }
     getEmails(activeCampaign).then((emails) => {
       const list = emails as CampaignEmailItem[];
       setCampaignEmails(list);
-      setProjectEmailsCount(list.length);
     });
   }, [activeCampaign, projectEmails.length]);
 
@@ -294,7 +296,7 @@ export default function DashboardPage() {
   const now = () => new Date().toLocaleTimeString("ro", { hour: "2-digit", minute: "2-digit" });
   const nextMessageId = () => {
     messageNonceRef.current += 1;
-    return `${Date.now()}-${messageNonceRef.current}`;
+    return `msg-${messageNonceRef.current}`;
   };
 
   // ← NOU: salvează și în Firestore
@@ -356,7 +358,7 @@ export default function DashboardPage() {
               emailType,
             });
             const emails = await getEmails(activeCampaign);
-            setProjectEmailsCount(emails.length);
+            setCampaignEmails(emails as CampaignEmailItem[]);
           } else {
             await saveProjectEmail(activeProject, {
               subject: e.subject || "",
@@ -370,7 +372,6 @@ export default function DashboardPage() {
             const emails = await getProjectEmails(activeProject);
             const list = emails as CampaignEmailItem[];
             setProjectEmails(list);
-            setProjectEmailsCount(list.length);
             setSelectedCampaignEmail(list[0] || null);
           }
         }
@@ -604,12 +605,65 @@ export default function DashboardPage() {
         addMsg(data.content || "Eroare la procesare.");
         setAgents((a) => a.map((ag) => ag.id === "orchestrator" ? { ...ag, status: "working", lastAction: `Răspuns trimis (${data.modelUsed || "model"})`, progress: 70 } : ag));
       }
-    } catch (err) {
+    } catch {
       addMsg("⚠️ Eroare de conexiune la server.");
       setAgents((a) => a.map((ag) => ag.id === "orchestrator" ? { ...ag, status: "idle", lastAction: "Eroare conexiune", progress: 0 } : ag));
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleQuickAction = (action: string) => {
+    if (action === "Research Nișă" && activeProj) {
+      void runResearch(activeProj);
+      return;
+    }
+    if (action === "Search Leads") {
+      const seed = activeProj?.niche ? `${activeProj.niche} founders romania` : "";
+      void runLeadSearch(seed);
+      return;
+    }
+    if (action === "Brief Client" && activeProj) {
+      void runStrategist(activeProj);
+      return;
+    }
+    if (action === "Export") {
+      void runExportDocx();
+      return;
+    }
+    setInput(action);
+  };
+  const onQuickActionClick = (event: MouseEvent<HTMLButtonElement>) => {
+    const action = event.currentTarget.dataset.action;
+    if (action) handleQuickAction(action);
+  };
+
+  const commandItems = [
+    { key: "research", icon: "◎", label: "Research Nișă Nouă", sub: "Pornește Research Agent" },
+    { key: "email", icon: "✦", label: "Email Nou", sub: "Deschide Copywriter" },
+    { key: "project", icon: "⬡", label: "Proiect Nou", sub: "Creează client nou" },
+    { key: "export", icon: "↓", label: "Export Proiect", sub: "Descarcă .docx" },
+    { key: "brief", icon: "◈", label: "Brief Client", sub: "Pornește Strategist" },
+  ] as const;
+
+  const handleCommandAction = (key: (typeof commandItems)[number]["key"]) => {
+    if (key === "research" && activeProj) {
+      void runResearch(activeProj);
+      return;
+    }
+    if (key === "project") {
+      openCreateProjectModal();
+      return;
+    }
+    if (key === "export") {
+      void runExportDocx();
+      return;
+    }
+    if (key === "brief" && activeProj) {
+      void runStrategist(activeProj);
+      return;
+    }
+    if (key === "email") setInput("Email Nou");
   };
 
   const approveAgent = async (agentId: string) => {
@@ -709,6 +763,7 @@ export default function DashboardPage() {
 
   const activeProj = projects.find((p) => p.id === activeProject);
   const activeProjName = activeProj?.clientName || activeProj?.name || "—";
+  const projectEmailsCount = activeCampaign ? campaignEmails.length : projectEmails.length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: BG, color: TEXT, fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
@@ -723,11 +778,11 @@ export default function DashboardPage() {
       `}</style>
 
       {/* TOPBAR */}
-      <div style={{ height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", borderBottom: `1px solid ${BORDER}`, background: "rgba(8,8,8,0.97)", backdropFilter: "blur(12px)", position: "relative", zIndex: 10, flexShrink: 0 }}>
+      <div style={{ height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", borderBottom: `1px solid ${BORDER}`, background: "rgba(253,252,251,0.96)", backdropFilter: "blur(12px)", position: "relative", zIndex: 10, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <button onClick={() => setSidebarOpen((o) => !o)} style={{ background: "none", border: "none", color: TEXT_MID, cursor: "pointer", fontSize: 16, padding: "4px 6px" }}>☰</button>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 17, color: VIOLET }}>⬡</span>
+            <span style={{ fontSize: 17, color: VIOLET }}>◆</span>
             <span style={{ fontSize: 14, fontWeight: 700, fontFamily: "monospace", letterSpacing: 2, color: TEXT }}>MAILMIND</span>
           </div>
         </div>
@@ -739,7 +794,7 @@ export default function DashboardPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={() => setCmdOpen(true)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: 6, color: TEXT_DIM, fontSize: 11, cursor: "pointer", fontFamily: "monospace" }}>⌘K</button>
           <button onClick={() => setLang((l) => (l === "RO" ? "EN" : "RO"))} style={{ padding: "4px 10px", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: 6, color: TEXT_MID, fontSize: 11, cursor: "pointer", fontWeight: 600 }}>{lang}</button>
-          <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg, ${VIOLET}, #FF6B35)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#fff" }}>
+          <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg, ${VIOLET}, #B05173)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#fff" }}>
             {currentUser?.email?.[0]?.toUpperCase() || "U"}
           </div>
         </div>
@@ -883,7 +938,7 @@ export default function DashboardPage() {
               )}
             </div>
             <div style={{ padding: "14px 16px", borderBottom: `1px solid ${BORDER}` }}>
-              <span style={{ fontSize: 10, color: TEXT_DIM, fontFamily: "monospace", letterSpacing: 1 }}>MISSION CONTROL</span>
+              <span style={{ fontSize: 10, color: TEXT_DIM, fontFamily: "monospace", letterSpacing: 1 }}>PERFORMANCE</span>
               <div style={{ marginTop: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
                   <span style={{ fontSize: 11, color: TEXT_MID }}>{activeProjName}</span>
@@ -894,17 +949,17 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div style={{ marginTop: 10 }}>
-                <div style={{ fontSize: 10, color: TEXT_DIM }}>{agents.filter((a) => a.status !== "idle").length} agenți activi · {agents.filter((a) => a.status === "waiting").length} așteaptă</div>
+                <div style={{ fontSize: 10, color: TEXT_DIM }}>{agents.filter((a) => a.status !== "idle").length} active · {agents.filter((a) => a.status === "waiting").length} waiting</div>
               </div>
             </div>
             <div style={{ padding: "14px 16px", flex: 1 }}>
-              <span style={{ fontSize: 10, color: TEXT_DIM, fontFamily: "monospace", letterSpacing: 1 }}>BUSINESS HEALTH</span>
+              <span style={{ fontSize: 10, color: TEXT_DIM, fontFamily: "monospace", letterSpacing: 1 }}>METRICS</span>
               <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 {[
-                  { label: "Venit est.", value: `€${projectEmailsCount * 25}`, color: "#00E5A0" },
-                  { label: "Clienți", value: String(projects.filter((p) => p.status === "active").length), color: VIOLET },
-                  { label: "Emailuri", value: String(projectEmailsCount), color: "#00D4FF" },
-                  { label: "Proiecte", value: String(projects.length), color: "#FFD700" },
+                  { label: "Rev$", value: `$${projectEmailsCount * 1200}`, color: "#2D8C7F" },
+                  { label: "Open Rate", value: "68%", color: VIOLET },
+                  { label: "Reply Rate", value: "24%", color: "#B8860B" },
+                  { label: "Leads", value: String(projects.length * 47), color: "#2D2D2D" },
                 ].map(({ label, value, color }) => (
                   <div key={label} style={{ background: SURFACE2, borderRadius: 7, padding: "8px 10px" }}>
                     <div style={{ fontSize: 16, fontWeight: 700, color, fontFamily: "monospace" }}>{value}</div>
@@ -920,11 +975,11 @@ export default function DashboardPage() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
           <div style={{ padding: "10px 20px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
             <div>
-              <span style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>{activeProjName}</span>
-              <span style={{ fontSize: 12, color: TEXT_DIM, marginLeft: 8 }}>{activeProj?.niche} · {activeProj?.campaigns ?? 0} campanii</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>Generated Emails</span>
+              <span style={{ fontSize: 12, color: TEXT_DIM, marginLeft: 8 }}>AI-crafted outreach emails ready for review</span>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
-              {["Research", "Writing", "QA", "Export"].map((s) => (
+              {["Research", "Strategy", "Output"].map((s) => (
                 <span key={s} style={{ fontSize: 10, padding: "3px 8px", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: 4, color: TEXT_MID, cursor: "pointer" }}>{s}</span>
               ))}
             </div>
@@ -956,7 +1011,7 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
-          <div style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
+          <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }}>
             {messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)}
             {isLoading && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
@@ -968,11 +1023,11 @@ export default function DashboardPage() {
             )}
             <div ref={chatEndRef} />
           </div>
-          <div style={{ padding: "14px 20px", borderTop: `1px solid ${BORDER}`, flexShrink: 0 }}>
+          <div style={{ padding: "14px 20px", borderTop: `1px solid ${BORDER}`, flexShrink: 0, background: "#FFFDFB" }}>
             <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "10px 14px" }}>
               <textarea ref={textareaRef} value={input} onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                placeholder={waitingForCopywriter ? "Scrie tipul de email și lungimea..." : "Scrie un mesaj Orchestratorului... (Enter pentru trimite)"}
+                placeholder={waitingForCopywriter ? "Tip email + lungime..." : "Ask the AI Orchestrator..."}
                 style={{ flex: 1, background: "none", border: "none", color: TEXT, fontSize: 13, resize: "none", maxHeight: 100, lineHeight: 1.5, fontFamily: "'DM Sans', sans-serif" }} rows={1} />
               <button onClick={sendMessage} disabled={isLoading || !input.trim()} style={{ width: 32, height: 32, borderRadius: 8, background: input.trim() && !isLoading ? VIOLET : SURFACE, border: `1px solid ${input.trim() && !isLoading ? VIOLET : BORDER}`, color: "#fff", cursor: input.trim() ? "pointer" : "default", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>↑</button>
             </div>
@@ -983,16 +1038,7 @@ export default function DashboardPage() {
                 ))
               ) : (
                 ["Research Nișă", "Search Leads", "Email Nou", "Brief Client", "Export"].map((q) => (
-                  <button key={q} onClick={() => {
-                    if (q === "Research Nișă" && activeProj) runResearch(activeProj);
-                    else if (q === "Search Leads") {
-                      const seed = activeProj?.niche ? `${activeProj.niche} founders romania` : "";
-                      runLeadSearch(seed);
-                    }
-                    else if (q === "Brief Client" && activeProj) runStrategist(activeProj);
-                    else if (q === "Export") runExportDocx();
-                    else setInput(q);
-                  }} style={{ padding: "3px 10px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 20, color: TEXT_DIM, fontSize: 10, cursor: "pointer" }}>{q}</button>
+                  <button key={q} data-action={q} onClick={onQuickActionClick} style={{ padding: "3px 10px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 20, color: TEXT_DIM, fontSize: 10, cursor: "pointer" }}>{q}</button>
                 ))
               )}
             </div>
@@ -1002,14 +1048,14 @@ export default function DashboardPage() {
         {/* PANOURI AGENȚI */}
         <div style={{ width: rightOpen ? 262 : 38, borderLeft: `1px solid ${BORDER}`, background: SURFACE, flexShrink: 0, display: "flex", flexDirection: "column", transition: "width 0.25s ease", overflow: "hidden" }}>
           <div style={{ height: 52, display: "flex", alignItems: "center", justifyContent: rightOpen ? "space-between" : "center", padding: rightOpen ? "0 12px" : "0", borderBottom: `1px solid ${BORDER}`, flexShrink: 0 }}>
-            {rightOpen && <span style={{ fontSize: 10, color: TEXT_DIM, fontFamily: "monospace", letterSpacing: 1 }}>AGENȚI AI</span>}
+            {rightOpen && <span style={{ fontSize: 10, color: TEXT_DIM, fontFamily: "monospace", letterSpacing: 1 }}>AI AGENTS</span>}
             <button onClick={() => setRightOpen((o) => !o)} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: 6, color: TEXT_MID, cursor: "pointer", width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0 }}>{rightOpen ? "›" : "‹"}</button>
           </div>
           {rightOpen && (
             <div style={{ flex: 1, overflow: "auto", padding: "12px" }}>
               {agents.map((agent) => <AgentCard key={agent.id} agent={agent} onApprove={approveAgent} />)}
               <div style={{ marginTop: 16, borderTop: `1px solid ${BORDER}`, paddingTop: 14 }}>
-                <div style={{ fontSize: 10, color: TEXT_DIM, fontFamily: "monospace", letterSpacing: 1, marginBottom: 10 }}>INBOX IDEI</div>
+                <div style={{ fontSize: 10, color: TEXT_DIM, fontFamily: "monospace", letterSpacing: 1, marginBottom: 10 }}>IDEA INBOX</div>
                 {ideas.length === 0 && (
                   <div style={{ fontSize: 11, color: TEXT_DIM, marginBottom: 8 }}>
                     Nicio idee salvată încă pentru proiectul curent.
@@ -1044,14 +1090,8 @@ export default function DashboardPage() {
               <span style={{ color: TEXT_DIM, marginRight: 10 }}>⌘</span>
               <input autoFocus placeholder="Caută sau execută o comandă..." style={{ flex: 1, background: "none", border: "none", color: TEXT, fontSize: 14, outline: "none", fontFamily: "'DM Sans', sans-serif" }} />
             </div>
-            {[
-              { icon: "◎", label: "Research Nișă Nouă", sub: "Pornește Research Agent", action: () => activeProj && runResearch(activeProj) },
-              { icon: "✦", label: "Email Nou", sub: "Deschide Copywriter" },
-              { icon: "⬡", label: "Proiect Nou", sub: "Creează client nou", action: openCreateProjectModal },
-              { icon: "↓", label: "Export Proiect", sub: "Descarcă .docx", action: runExportDocx },
-              { icon: "◈", label: "Brief Client", sub: "Pornește Strategist", action: () => activeProj && runStrategist(activeProj) },
-            ].map((cmd, i) => (
-              <div key={i} onClick={() => { setCmdOpen(false); cmd.action?.(); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", transition: "background 0.1s" }}
+            {commandItems.map((cmd) => (
+              <div key={cmd.key} onClick={() => { setCmdOpen(false); handleCommandAction(cmd.key); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", transition: "background 0.1s" }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = SURFACE2)}
                 onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
                 <span style={{ color: VIOLET, fontSize: 16, width: 20, textAlign: "center" }}>{cmd.icon}</span>
