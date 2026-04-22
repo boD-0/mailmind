@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type MouseEvent } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { getProjects, createProject, updateProject, deleteProject, getMessages, saveMessage, saveProjectEmail, getProjectEmails, getProjectIdeas, saveProjectIdea, getCampaigns, createCampaign, updateCampaign, deleteCampaign, saveEmail, getEmails, updateEmail } from "@/lib/firestore";
@@ -134,14 +134,13 @@ export default function DashboardPage() {
   const [latestEmailDraft, setLatestEmailDraft] = useState<EmailDraft | null>(null);
   const [latestResearch, setLatestResearch] = useState<ResearchData | null>(null);
   const [latestStrategy, setLatestStrategy] = useState<StrategistProfile | null>(null);
-  const [projectEmailsCount, setProjectEmailsCount] = useState(0);
   const [ideas, setIdeas] = useState<IdeaItem[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
   const [activeCampaign, setActiveCampaign] = useState<string | null>(null);
   const [campaignEmails, setCampaignEmails] = useState<CampaignEmailItem[]>([]);
   const [projectEmails, setProjectEmails] = useState<CampaignEmailItem[]>([]);
   const [selectedCampaignEmail, setSelectedCampaignEmail] = useState<CampaignEmailItem | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
+  const [, setIsExporting] = useState(false);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectModalMode, setProjectModalMode] = useState<ProjectModalMode>("create");
   const [projectModalTargetId, setProjectModalTargetId] = useState<string | null>(null);
@@ -196,7 +195,6 @@ export default function DashboardPage() {
     getProjectEmails(activeProject).then((emails) => {
       const list = emails as CampaignEmailItem[];
       setProjectEmails(list);
-      setProjectEmailsCount(list.length);
     });
     getProjectIdeas(activeProject).then((projectIdeas) => setIdeas(projectIdeas as IdeaItem[]));
     getCampaigns(activeProject).then((data) => {
@@ -204,24 +202,15 @@ export default function DashboardPage() {
       setCampaigns(list);
       setActiveCampaign(list.length > 0 ? list[0].id : null);
     });
-    setCampaignEmails([]);
-    setSelectedCampaignEmail(null);
-    setLatestResearch(null);
-    setLatestEmailDraft(null);
-    setLatestStrategy(null);
   }, [activeProject]);
 
   useEffect(() => {
     if (!activeCampaign) {
-      setCampaignEmails([]);
-      setSelectedCampaignEmail(null);
-      setProjectEmailsCount(projectEmails.length);
       return;
     }
     getEmails(activeCampaign).then((emails) => {
       const list = emails as CampaignEmailItem[];
       setCampaignEmails(list);
-      setProjectEmailsCount(list.length);
     });
   }, [activeCampaign, projectEmails.length]);
 
@@ -307,7 +296,7 @@ export default function DashboardPage() {
   const now = () => new Date().toLocaleTimeString("ro", { hour: "2-digit", minute: "2-digit" });
   const nextMessageId = () => {
     messageNonceRef.current += 1;
-    return `${Date.now()}-${messageNonceRef.current}`;
+    return `msg-${messageNonceRef.current}`;
   };
 
   // ← NOU: salvează și în Firestore
@@ -369,7 +358,7 @@ export default function DashboardPage() {
               emailType,
             });
             const emails = await getEmails(activeCampaign);
-            setProjectEmailsCount(emails.length);
+            setCampaignEmails(emails as CampaignEmailItem[]);
           } else {
             await saveProjectEmail(activeProject, {
               subject: e.subject || "",
@@ -383,7 +372,6 @@ export default function DashboardPage() {
             const emails = await getProjectEmails(activeProject);
             const list = emails as CampaignEmailItem[];
             setProjectEmails(list);
-            setProjectEmailsCount(list.length);
             setSelectedCampaignEmail(list[0] || null);
           }
         }
@@ -617,12 +605,65 @@ export default function DashboardPage() {
         addMsg(data.content || "Eroare la procesare.");
         setAgents((a) => a.map((ag) => ag.id === "orchestrator" ? { ...ag, status: "working", lastAction: `Răspuns trimis (${data.modelUsed || "model"})`, progress: 70 } : ag));
       }
-    } catch (err) {
+    } catch {
       addMsg("⚠️ Eroare de conexiune la server.");
       setAgents((a) => a.map((ag) => ag.id === "orchestrator" ? { ...ag, status: "idle", lastAction: "Eroare conexiune", progress: 0 } : ag));
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleQuickAction = (action: string) => {
+    if (action === "Research Nișă" && activeProj) {
+      void runResearch(activeProj);
+      return;
+    }
+    if (action === "Search Leads") {
+      const seed = activeProj?.niche ? `${activeProj.niche} founders romania` : "";
+      void runLeadSearch(seed);
+      return;
+    }
+    if (action === "Brief Client" && activeProj) {
+      void runStrategist(activeProj);
+      return;
+    }
+    if (action === "Export") {
+      void runExportDocx();
+      return;
+    }
+    setInput(action);
+  };
+  const onQuickActionClick = (event: MouseEvent<HTMLButtonElement>) => {
+    const action = event.currentTarget.dataset.action;
+    if (action) handleQuickAction(action);
+  };
+
+  const commandItems = [
+    { key: "research", icon: "◎", label: "Research Nișă Nouă", sub: "Pornește Research Agent" },
+    { key: "email", icon: "✦", label: "Email Nou", sub: "Deschide Copywriter" },
+    { key: "project", icon: "⬡", label: "Proiect Nou", sub: "Creează client nou" },
+    { key: "export", icon: "↓", label: "Export Proiect", sub: "Descarcă .docx" },
+    { key: "brief", icon: "◈", label: "Brief Client", sub: "Pornește Strategist" },
+  ] as const;
+
+  const handleCommandAction = (key: (typeof commandItems)[number]["key"]) => {
+    if (key === "research" && activeProj) {
+      void runResearch(activeProj);
+      return;
+    }
+    if (key === "project") {
+      openCreateProjectModal();
+      return;
+    }
+    if (key === "export") {
+      void runExportDocx();
+      return;
+    }
+    if (key === "brief" && activeProj) {
+      void runStrategist(activeProj);
+      return;
+    }
+    if (key === "email") setInput("Email Nou");
   };
 
   const approveAgent = async (agentId: string) => {
@@ -722,6 +763,7 @@ export default function DashboardPage() {
 
   const activeProj = projects.find((p) => p.id === activeProject);
   const activeProjName = activeProj?.clientName || activeProj?.name || "—";
+  const projectEmailsCount = activeCampaign ? campaignEmails.length : projectEmails.length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: BG, color: TEXT, fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
@@ -996,16 +1038,7 @@ export default function DashboardPage() {
                 ))
               ) : (
                 ["Research Nișă", "Search Leads", "Email Nou", "Brief Client", "Export"].map((q) => (
-                  <button key={q} onClick={() => {
-                    if (q === "Research Nișă" && activeProj) runResearch(activeProj);
-                    else if (q === "Search Leads") {
-                      const seed = activeProj?.niche ? `${activeProj.niche} founders romania` : "";
-                      runLeadSearch(seed);
-                    }
-                    else if (q === "Brief Client" && activeProj) runStrategist(activeProj);
-                    else if (q === "Export") runExportDocx();
-                    else setInput(q);
-                  }} style={{ padding: "3px 10px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 20, color: TEXT_DIM, fontSize: 10, cursor: "pointer" }}>{q}</button>
+                  <button key={q} data-action={q} onClick={onQuickActionClick} style={{ padding: "3px 10px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 20, color: TEXT_DIM, fontSize: 10, cursor: "pointer" }}>{q}</button>
                 ))
               )}
             </div>
@@ -1057,14 +1090,8 @@ export default function DashboardPage() {
               <span style={{ color: TEXT_DIM, marginRight: 10 }}>⌘</span>
               <input autoFocus placeholder="Caută sau execută o comandă..." style={{ flex: 1, background: "none", border: "none", color: TEXT, fontSize: 14, outline: "none", fontFamily: "'DM Sans', sans-serif" }} />
             </div>
-            {[
-              { icon: "◎", label: "Research Nișă Nouă", sub: "Pornește Research Agent", action: () => activeProj && runResearch(activeProj) },
-              { icon: "✦", label: "Email Nou", sub: "Deschide Copywriter" },
-              { icon: "⬡", label: "Proiect Nou", sub: "Creează client nou", action: openCreateProjectModal },
-              { icon: "↓", label: "Export Proiect", sub: "Descarcă .docx", action: runExportDocx },
-              { icon: "◈", label: "Brief Client", sub: "Pornește Strategist", action: () => activeProj && runStrategist(activeProj) },
-            ].map((cmd, i) => (
-              <div key={i} onClick={() => { setCmdOpen(false); cmd.action?.(); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", transition: "background 0.1s" }}
+            {commandItems.map((cmd) => (
+              <div key={cmd.key} onClick={() => { setCmdOpen(false); handleCommandAction(cmd.key); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", transition: "background 0.1s" }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = SURFACE2)}
                 onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
                 <span style={{ color: VIOLET, fontSize: 16, width: 20, textAlign: "center" }}>{cmd.icon}</span>
