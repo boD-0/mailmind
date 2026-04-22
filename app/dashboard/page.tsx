@@ -32,6 +32,7 @@ interface StrategistProfile { clientSummary?: string; niche?: string; avatar?: {
 interface IdeaItem { id: string; text?: string; tag?: string; source?: string; }
 interface CampaignItem { id: string; name?: string; status?: string; }
 interface CampaignEmailItem { id: string; subject?: string; body?: string; status?: string; }
+interface LeadSearchItem { name?: string; title?: string; company?: string; email?: string; linkedin?: string; }
 type ProjectModalMode = "create" | "edit" | "delete";
 
 const initialAgents: Agent[] = [
@@ -516,6 +517,46 @@ export default function DashboardPage() {
     }
   };
 
+  const runLeadSearch = async (queryText: string) => {
+    const cleaned = queryText.trim();
+    if (!cleaned) {
+      addMsg("⚠️ Scrie un query pentru search leads. Exemplu: `search leads dentists bucuresti`.");
+      return;
+    }
+
+    setAgents((a) => a.map((ag) => ag.id === "research" ? { ...ag, status: "working", lastAction: "Caută lead-uri în Apollo...", progress: 20 } : ag));
+    addMsg(`◎ **Lead Search pornit** pentru: **${cleaned}**`);
+
+    try {
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: cleaned, perPage: 8 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Search failed");
+
+      const leads = (Array.isArray(data.results) ? data.results : []) as LeadSearchItem[];
+      if (leads.length === 0) {
+        addMsg("◎ Nu am găsit lead-uri pentru query-ul curent. Încearcă un query mai specific (nisa + locație + rol).");
+      } else {
+        const preview = leads
+          .slice(0, 5)
+          .map((l, idx) => {
+            const base = `**${idx + 1}. ${l.name || "Unknown"}** — ${l.title || "No title"} @ ${l.company || "No company"}`;
+            const details = [l.email ? `Email: ${l.email}` : "", l.linkedin ? `LinkedIn: ${l.linkedin}` : ""].filter(Boolean).join(" | ");
+            return details ? `${base}\n${details}` : base;
+          })
+          .join("\n\n");
+        addMsg(`◎ **Lead Search finalizat** (${data.total || leads.length} rezultate)\n\n${preview}`);
+      }
+      setAgents((a) => a.map((ag) => ag.id === "research" ? { ...ag, status: "waiting", lastAction: "Lead search gata", progress: 100 } : ag));
+    } catch (err) {
+      addMsg(`⚠️ Lead Search a eșuat: ${err instanceof Error ? err.message : "eroare necunoscută"}`);
+      setAgents((a) => a.map((ag) => ag.id === "research" ? { ...ag, status: "idle", lastAction: "Eroare lead search", progress: 0 } : ag));
+    }
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
     const userMsg: Message = { id: nextMessageId(), role: "user", content: input.trim(), ts: now() };
@@ -537,6 +578,12 @@ export default function DashboardPage() {
 
     if (content.includes("research agent") || content.includes("research nișă")) {
       if (activeProj) { setIsLoading(false); await runResearch(activeProj); return; }
+    }
+    if (content.startsWith("search leads")) {
+      setIsLoading(false);
+      const q = userMsg.content.replace(/^search leads/i, "").trim() || `${activeProj?.niche || ""}`.trim();
+      await runLeadSearch(q);
+      return;
     }
     if (content.includes("brief client") || content.includes("strategist")) {
       if (activeProj) { setIsLoading(false); await runStrategist(activeProj); return; }
@@ -935,9 +982,13 @@ export default function DashboardPage() {
                   <button key={q} onClick={() => setInput((i) => i ? i + " " + q : q)} style={{ padding: "3px 10px", background: `${VIOLET}22`, border: `1px solid ${VIOLET}44`, borderRadius: 20, color: TEXT_MID, fontSize: 10, cursor: "pointer" }}>{q}</button>
                 ))
               ) : (
-                ["Research Nișă", "Email Nou", "Brief Client", "Export"].map((q) => (
+                ["Research Nișă", "Search Leads", "Email Nou", "Brief Client", "Export"].map((q) => (
                   <button key={q} onClick={() => {
                     if (q === "Research Nișă" && activeProj) runResearch(activeProj);
+                    else if (q === "Search Leads") {
+                      const seed = activeProj?.niche ? `${activeProj.niche} founders romania` : "";
+                      runLeadSearch(seed);
+                    }
                     else if (q === "Brief Client" && activeProj) runStrategist(activeProj);
                     else if (q === "Export") runExportDocx();
                     else setInput(q);
